@@ -1,0 +1,378 @@
+---
+title: "R Notebook"
+output: 
+  pdf_document: default
+  html_notebook: default
+---
+
+# C3283188 - Patrick Jansson 
+# COMP3340 - Data Mining Assignment 3
+```{r include=FALSE}
+library(readxl)
+library(MASS)
+library(caret)
+library(igraph)
+library(mstknnclust)
+library(stats)
+library(mlbench)
+library(Hmisc)
+library(randomForest)
+require(caTools)
+library(MLmetrics)
+library(mltools)
+library(cutpointr)
+library(GGally)
+library(ggplot2)
+library(ggcorrplot)
+library(amap)
+library(caTools)
+library(RColorBrewer)
+library(cccd)
+library(xlsx)
+library(class)
+library(tidyverse)
+library(vcd)
+library(cluster)    
+library(factoextra)
+library(arules)
+library(arulesViz)
+display.brewer.all()
+```
+
+Reading data from regression dataset of choice
+
+```{r}
+
+energy <- read.xlsx("../Datasets/Regression Datasets/EnergyEfficiency.xlsx", 1, header = TRUE)
+
+```
+
+Reading data from classification dataset of choice
+
+```{r}
+
+iris <- read.csv("../Datasets/Classification Datasets/Iris.csv", stringsAsFactors = TRUE)
+iris$Species <- factor(iris$Species, levels = c("Iris-setosa", "Iris-versicolor", "Iris-virginica"))
+
+```
+
+## Exercise 1
+
+```{r}
+
+pal3 <- brewer.pal(9, "Set3")
+
+energy.preds <- data.matrix(subset(energy[1:100,], select = -c(NA.)))
+
+energy.distance <- as.matrix(Dist(energy.preds, "euclidean"))
+
+```
+
+```{r}
+
+energy.completeGraph <- generate.complete.graph(1:nrow(energy.preds), energy.distance)
+
+```
+
+```{r}
+
+energy.rng <- rng(dx=energy.distance)
+plot(energy.rng, vertex.color=pal3, vertex.size=12, layout=layout_with_dh, main="Energy Efficiency - RNG")
+
+```
+## Exercise 2 
+
+```{r}
+
+churn <- read.delim("../Datasets/Classification Datasets/Customer Churn.txt", header=TRUE, sep = ",", stringsAsFactors = TRUE)
+churn <- churn[complete.cases(churn),]
+sample = sample.split(churn, SplitRatio = .75)
+
+```
+Training data set
+```{r}
+train = subset(churn, sample == TRUE)
+```
+Test data set
+```{r}
+test  = subset(churn, sample == FALSE)
+
+```
+
+Training and test data were split up at a ratio of 3:1 in favor of the training set randomly.
+Full dataset was constrained to 100 entries to account for computational power.
+
+```{r}
+
+
+
+ctrl.churn <- rfeControl(functions = rfFuncs,
+                   method = "repeatedcv",
+                   repeats = 5)
+
+rfe.churn <- rfe(x=train[1:100,!names(train) %in% c("Churn.", "Phone")], y=train$Churn.[1:100],
+                 sizes = c(3:8, 10, 15),
+                 rfeControl = ctrl.churn)
+
+rfe.churn
+predictors(rfe.churn)
+plot(rfe.churn, type = c("g", "o"))
+```
+
+b) Random forest model
+
+```{r}
+rfe.churn$fit
+```
+
+Now, we predict samples in the test set, and compare them to their actual classes. 
+```{r}
+churn.preds <-predict(rfe.churn$fit, test[,!names(test) %in% c("Churn")])
+
+conf_matrix.churn <-confusionMatrix(churn.preds,as.factor(test$Churn))
+conf_matrix.churn
+```
+
+Classifier has an accuracy of 86%. High sensitivity of 97%, however a very low specificity rate of 16%, meaning it has a very low false positive rate. 
+
+```{r}
+conf_matrix.churn$byClass["F1"]
+```
+The F1 score is a balance between Precision and Recall.
+
+Precision is the ratio of correct predictions in the all the positive predicted observations. 
+Recall is the ratio of correctly predicted positive observation in the whole positive classs. 
+
+
+
+```{r}
+mcc(churn.preds, test$Churn)
+```
+Matthew's Correlation Coefficient is in essence a correlation coefficient between the observed and predicted binary classifications; it returns a value between −1 and +1. A coefficient of +1 represents a perfect prediction, 0 no better than random prediction and −1 indicates total disagreement between prediction and observation. To get a good score, a classifier must get a good score in all 4 confusion matrix categories. This classifier does not have a fantastic mcc.
+
+
+```{r}
+youden<- conf_matrix.churn$byClass["Sensitivity"] + conf_matrix.churn$byClass["Specificity"] -1 
+youden
+```
+Youden's J statistic has a range through 0 to 1, with 1 meaning all values were predicted correctly. As seen with my number, Youden's J statistic can be negative but it is said to be between 0 and 1 where positives and negatives are the number of real positive and real negative samples.
+
+## Exercise 3
+
+* <b>Input:</b> A set <i>X</i> of <i>m</i> examples, linear binary array of <b><i>n</i></b> features and a binary label assigned to each of them, positive integer <i>k > 0.</i> 
+* <b>Question:</b> Is there a subset of features S such that:
+    + <i>S ⊆ { 1, ..., n }</i>
+    + <i>|S| = k,</i>
+    +  No pair of examples in X have the same values for the features in S <b><i>but have different values for the binary label characteristic.</i></b>
+
+## Exercise 4
+
+A <i>string</i> is a concatenation of symbols of a given <i>alphabet</i>. Let Σ be one such alphabet. We define a <i>pattern</i>  as a string <i>s</i> over an <i>extended alphabet</i> that now includes the 'wild card' symbol and we write $Σ∗ := Σ ∪ {∗}.$
+
+## Exercise 5
+
+```{r}
+us <- read.csv("../Datasets/Classification Datasets/USPresidency.csv")
+us.preds <- data.matrix(subset(us[1:31,], select = -c(Year)))
+us.distance <- as.matrix(Dist(us.preds, "euclidean"))
+us.completeGraph <- generate.complete.graph(1:nrow(us.preds), us.distance)
+us.mst <- generate.mst(us.completeGraph)
+```
+a) 
+```{r}
+plot(us.mst$mst.graph, vertex.color=pal3, vertex.size=12, layout=layout_with_dh, main="MST - US Presidency")
+```
+b & d) 
+```{r}
+
+results <- mst.knn(us.distance)
+library("igraph")
+plot(results$network, vertex.size=8,
+     vertex.color=igraph::clusters(results$network)$membership,
+     layout=igraph::layout.fruchterman.reingold(results$network, niter=10000),
+     main=paste("MST-kNN - Clustering solution \n Number of clusters=",results$cnumber,sep="" ))
+```
+
+c.
+
+* Starting off with a complete weighted <i>G(V,E,C)</i> where:
+    + <i>V</i>: set of <i>n</i> vertices in the graph (one for each element)
+    + <i>E</i>: set of edges. One fro each pair of elements <i>(i,j).</i>
+    + <i>C</i>: set of edges' cost. Represents the distance between <i>i</i> and <i>j</i>.
+* Minimum Spanning Tree (MST)
+    + <i>G<sub>MST</sub>(V,E<sub>MST</sub>,C<sub>MST</sub>)</i>
+* <i>k</i>-Nearest Neighbors (<i>kNN</i>)
+    + <i>G<sub>kNN</sub>(V,E<sub>kNN</sub>,C<sub>kNN</sub>)</i>
+* To calculate the edges in both the MST and the k-NN, we need to produce a partition of the
+graph vertices and identify a forest (set of subtrees of the complete weighted
+graph; these are our clusters). 
+* So we get a new graph:
+    + <i>G<sub>CLUSTER</sub>(V, E<sub>CLUSTER</sub>,C<sub>CLUSTER</sub>),</i> with:
+      - <i>G<sub>CLUSTER</sub> = E<sub>MST</sub> E<sub>kNN</sub></i>
+      - Dynamic/adaptive value of <i>k</i>
+      
+## Exercise 6
+
+```{r}
+
+us <- read.csv("../Datasets/Classification Datasets/USPresidency.csv", row.names = "Year")
+km.res <- kmeans(us, 4, nstart = 1)
+print(km.res)
+
+aggregate(us, by=list(cluster=km.res$cluster), mean)
+
+```
+
+a) An inter-rater reliability method is the degree of agreement among independent observers who rate, code, or assess the same phenomenon. Some examples of these are, if there is only two raters, the <b>Scott's Pi</b> or the <b>Cohen's Kappa</b>. In the case of <i>more than two raters</i> the <b>Fleiss' Kappa</b>, which is based on Scott's Pi, is recommended.
+
+b) Scott's Pi or Cohen's Kappa as there are only two raters and as such, Fleiss' Kappa would not be recommended.
+
+c) 
+
+## Exercise 7
+
+a) Lazy Classification: Lazy learners simply store the training data and wait until a testing data appear. When it does, classification is conducted based on the most related data in the stored training data. Compared to eager learners, lazy learners have less training time but more time in predicting. 
+Class Imbalance: A frequent problem in labelled datasets, such as binary and multiclass tasks. Can affect predictive performance of most ML algorithms. Often refers to the class distribution is not equal or close to equal, an is instead biased or skewed.
+
+b) 
+Churn Dataset
+```{r}
+
+conf_matrix.churn <-confusionMatrix(churn.preds,as.factor(test$Churn))
+conf_matrix.churn
+
+```
+High accuracy and very high sensitivity, showing the confusion matrix is quite good at knowing when the true is meant to be true. Low specificity however, meaning it's not vey accuracy regarding false's being false.
+
+Iris Dataset
+```{r}
+iris <- read.csv("../Datasets/Classification Datasets/Iris.csv", stringsAsFactors = TRUE)
+iris <- iris[complete.cases(iris),]
+sample.iris = sample.split(iris, SplitRatio = .75)
+train.iris = subset(iris, sample.iris == TRUE)
+test.iris  = subset(iris, sample.iris == FALSE)
+
+ctrl.iris <- rfeControl(functions = rfFuncs,
+                   method = "repeatedcv",
+                   repeats = 5)
+
+rfe.iris <- rfe(x=train.iris[1:100,!names(train.iris) %in% c("Species", "Id")], y=train.iris$Species[1:100],
+                 sizes = c(5, 10, 15, 20),
+                 rfeControl = ctrl.iris)
+
+iris.preds <-predict(rfe.iris$fit, test.iris[,!names(test.iris) %in% c("Species")])
+
+conf_matrix.iris <-confusionMatrix(iris.preds,as.factor(test.iris$Species))
+conf_matrix.iris
+
+```
+Very high accuracy, very high overall sensitivity and specificity. This confusion matrix shows how we can achieve very good results. 
+
+Example
+```{r}
+expected_value <- factor(c(1,1,1,0,1,1,0,1,0,1))
+predicted_value <- factor(c(1,0,1,1,0,1,1,0,0,1))
+
+example <- confusionMatrix(data=predicted_value, reference = expected_value)
+example
+
+```
+This confusion matrix shows us how not to do it. Low sensitivity, specificity and accuracy all mean the predicted values were very off.
+
+Matthew's Correlation Coefficient is in essence a correlation coefficient between the observed and predicted binary classifications; it returns a value between −1 and +1. A coefficient of +1 represents a perfect prediction, 0 no better than random prediction and −1 indicates total disagreement between prediction and observation. To get a good score, a classifier must get a good score in all 4 confusion matrix categories.
+1. Churn Dataset
+```{r}
+mcc(churn.preds, test$Churn)
+```
+This dataset doesn't have a very good mcc
+
+2. Iris Dataset
+```{r}
+mcc(iris.preds, test.iris$Species)
+```
+This dataset has a very good mcc
+
+3. Example Dataset
+```{r}
+mcc(predicted_value, expected_value)
+```
+This dataset has a quite good mcc
+## Exercise 8
+
+```{r}
+
+p3 <- fviz_cluster(km.res,  data = us) + ggtitle("Kmeans algorithm\nk = 4")
+p3
+
+results <- mst.knn(us.distance)
+library("igraph")
+plot(results$network, vertex.size=8,
+     vertex.color=igraph::clusters(results$network)$membership,
+     layout=igraph::layout.fruchterman.reingold(results$network, niter=10000),
+     main=paste("MST-kNN - Clustering solution \n Number of clusters=",results$cnumber,sep="" ))
+
+clusters <- hclust(dist(us[, 3:4]), method = 'average')
+suppressPackageStartupMessages(library(dendextend))
+avg_dend_obj <- as.dendrogram(clusters)
+avg_col_dend <- color_branches(avg_dend_obj, h = 0.5)
+plot(avg_col_dend, main="Hierchical Clustering Algorithm")
+```
+
+## Exercise 9
+a)
+Did not complete
+b)
+Association rules are given in the form as below:
+$$ A => B[Support,Confidence] $$
+The part before => is referred to as <i>if (Antecedent)</i> and the part after => is referred to as <i>then (Consequent).</i>
+For a Rule A=>B, Support is given by:
+$$ Support(A=>B)=\frac{frequency(A,B)}{N} $$
+For a rule A=>B Confidence shows the percentage in which B is bought with A.
+$$ Confidence(A=>B)=\frac{P(A∩B)}{P(A)}=\frac{frequency(A,B)}{frequency(A)} $$
+Support and Confidence measure how interesting the rule is. It is set by the minimum support and minimum confidence thresholds.If a rule A=>B[Support, Confidence] satisfies min_sup and min_confidence then it is a strong rule.
+When you apply Association Rule Mining on a given set of transactions T your goal will be to find all rules with:
+  1. Support greater than or equal to min_support
+  2. Confidence greater than or equal to min_confidence  
+  So finding association rules for the US Presidency dataset using the support threshold to 60% would prune rules where the support fails to meet those thresholds.
+  
+## Exercise 10
+
+Did not complete
+
+## Exercise 11
+Half working
+```{r}
+library(rpart,quietly = TRUE)
+library(caret,quietly = TRUE)
+library(rpart.plot,quietly = TRUE)
+library(rattle)
+
+us <- read.csv("../Datasets/Classification Datasets/USPresidency.csv")
+us.preds <- data.matrix(subset(us[1:31,], select = -c(Year)))
+
+
+set.seed(12345)
+train <- sample(1:nrow(us.preds),size = ceiling(0.80*nrow(us.preds)),replace = FALSE)
+us_train <- us.preds[train,]
+us_test <- us.preds[-train,]
+
+penalty.matrix <- matrix(c(0,1,10,0), byrow=TRUE, nrow=2)
+
+us_train <- as.data.frame(us_train)
+
+tree <- rpart(Q1~.,
+data=us_train,
+parms = list(loss = penalty.matrix),
+method = "class")
+
+rpart.plot(tree, nn=TRUE)
+```
+
+## Exercise 12
+
+a) <b>Cross-validation</b>  
+A resampling procedure used to evaluate machine learning models on a limited data sample. The procedure has a single parameter called k that refers to the number of groups that a given data sample is to be split into. As such, the procedure is often called k-fold cross-validation
+b) <b>Bootstrapping</b>  
+A type of resampling where large numbers of smaller samples of the same size are repeatedly drawn, with replacement, from a single original sample.
+c) <b>Imputation</b>  
+The process of replacing missing data with substituted values. When substituting for a data point, it is known as "unit imputation"; when substituting for a component of a data point, it is known as "item imputation".

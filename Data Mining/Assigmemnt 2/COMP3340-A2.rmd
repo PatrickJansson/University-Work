@@ -1,0 +1,362 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+# C3283188 - Patrick Jansson 
+# COMP3340 - Data Mining Assignment 2
+```{r include=FALSE}
+library(readxl)
+library(MASS)
+library(caret)
+library(igraph)
+library(mstknnclust)
+library(stats)
+library(mlbench)
+library(Hmisc)
+library(randomForest)
+require(caTools)
+library(MLmetrics)
+library(mltools)
+library(cutpointr)
+library(GGally)
+library(ggplot2)
+library(ggcorrplot)
+library(amap)
+library(caTools)
+library(RColorBrewer)
+library(cccd)
+display.brewer.all()
+```
+
+
+Reading data from education dataset
+
+```{r}
+education <- read.csv("StudentsAcademicPerformance.csv", stringsAsFactors=TRUE)
+education$Class <- factor(education$Class, levels = c("H", "M", "L"))
+
+```
+
+
+Transposing data from excel
+```{r}
+
+
+
+alzTraining <- read_excel("AlzheimersDisease.xls")
+alzTest <- read_excel("AlzheimersDiseaseCopy.xls", sheet = 2)
+
+alzTraining$CLASS <- as.factor(alzTraining$CLASS)
+alzTest$CLASS <- as.factor(alzTest$CLASS)
+
+
+alzProteins <- read_excel("AlzheimersDisease.xls", col_names = FALSE)
+
+```
+
+## Exercise 1
+
+```{r}
+
+
+ggpairs(education, columns = c(14,15, 16), ggplot2::aes(colour=Class),  lower = list(combo = "box", binwidth = 1), upper = list(combo="facethist"), legend = 1)
+
+
+```
+Summary - Exploratory, no analysis 
+
+- Student Absence Days and Parent School Satisfaction: The less days off the student has, the more likely the parents are to be satisfied with the school
+
+- Parents of the students in the higher classes were more likely the answer the surveys
+
+- The higher the class, the less likely a student is to have sick days.
+
+
+
+```{r}
+education.numeric <- dplyr::select_if(education, is.numeric)
+
+education.corr <- cor(education.numeric, use="complete.obs")
+round(education.corr, 2)
+
+ggcorrplot(education.corr)
+
+```
+- High correlation between raising hands, visiting resources, raising hands and viewing announcements. 
+
+- High negative correlation between raising hands and being a low class. Similar for Visiting resources and discussion.
+
+
+b)
+
+1. 
+```{r}
+
+
+plot(~Relation+VisITedResources,data=education, col=c("blue", 6))
+plot(~Relation+AnnouncementsView,data=education,  col=c("blue", 6))
+
+
+
+```
+True. Students who were "raised by their mums" are much more actively involved in study-related works
+
+2. 
+
+```{r}
+plot(xtabs(~Topic+gender, data=education), col=c(6, "blue"))
+```
+False. Boys were much more likely to take courses such as Arabic and Math, IT, while girls were more likely to take French or Chemistry.
+
+
+
+3. 
+```{r}
+plot(xtabs(~Class+gender, data=education), col=c(6, "blue"))
+```
+True. proportionally more girls were in higher classes than the boys. 
+
+4. 
+```{r}
+plot(Discussion~gender, data=education, col=c(6, "blue"))
+plot(raisedhands~gender, data=education, col=c(6, "blue"))
+plot(AnnouncementsView~gender, data=education, col=c(6, "blue"))
+```
+False. Both genders were more or less equally open to discussions, visiting resources and raising hands.
+
+
+5. 
+```{r}
+plot(Class~Discussion+AnnouncementsView+raisedhands, data=education, col=c("red", "yellow", "green"))
+```
+True. In general, students who participated in Discussion, Announcement Views, Raised Hands meant a greater likelihood to be a a higher class and perform better. 
+
+## Exercise 2 
+
+```{r}
+
+
+pal3 <- brewer.pal(9, "Set3")
+
+samples.preds <- data.matrix(subset(alzTraining, select = -c(CLASS)))
+View(alzTraining)
+View(samples.preds)
+proteins.preds <- alzProteins[-1,-1]
+View(proteins.preds)
+
+
+samples.distance <- as.matrix(Dist(samples.preds, "pearson"))
+proteins.distance <- as.matrix(Dist(proteins.preds, "pearson"))
+
+```
+
+Neither dataset is scaled or able to have dimensionality reduction applied to them through attribute aggregation. Therefore attribute filtering makes the most sense, in this case using Pearson's Correlation as the distance metric.
+
+```{r}
+samples.completeGraph <- generate.complete.graph(1:nrow(samples.preds), samples.distance)
+proteins.completeGraph <- generate.complete.graph(1:nrow(proteins.preds), proteins.distance)
+```
+
+a)
+
+A minimum spanning tree (MST) of a graph is a spanning tree where the sum of weights on the edges is the minimum over all possible spanning trees.
+In this case, the edge weights are the distances between samples/genes.
+
+The mstknnclust package uses Prims algorithm to calculate the mst. 
+
+
+```{r}
+
+samples.mst <- generate.mst(samples.completeGraph)
+plot(samples.mst$mst.graph, vertex.color=pal3, vertex.size=12, layout=layout_with_dh, main="MST - Samples")
+```
+
+
+b) 
+```{r}
+proteins.mst <- generate.mst(proteins.completeGraph)
+plot(proteins.mst$mst.graph, vertex.color=pal3, vertex.size=12, layout=layout_with_dh, main="MST - Proteins")
+```
+
+
+c)
+
+Relative Neighbourhood Graph (RNG) connects two points (on the Euclidean plane) if there does not exist a third point that is closer to both than they are to each other
+
+```{r}
+
+samples.rng <- rng(dx=samples.distance)
+plot(samples.rng, vertex.color=pal3, vertex.size=12, layout=layout_with_dh, main="RNG - Samples")
+
+```
+
+
+d)
+```{r}
+proteins.rng <- rng(dx=proteins.distance)
+plot(proteins.rng, vertex.color=pal3, vertex.size=12, layout=layout_with_dh, main="RNG - Proteins")
+
+```
+
+
+## Exercise 3
+
+a) 
+Recursive feature elimination (RFE) is a greedy optimization algorithm which aims to find the best performing feature subset. It repeatedly creates models and keeps aside the best or the worst performing feature at each iteration. It constructs the next model with the left features until all the features are exhausted. It then ranks the features based on the order of their elimination.
+
+
+Unfortunately, I was unable to get this working fully as for some reason the y component of rfe didn't recognise the datasets CLASS element as a non-empty class and as such I had to transfer it to numeric, resulting in an incorrect plot and causing issues further down in my code.
+
+
+```{r}
+set.seed(74)
+
+
+subsets <- c(1:5, 10, 15, 20, 25, 50)
+
+ctrl <- rfeControl(functions = rfFuncs,
+                   method = "repeatedcv",
+                   repeats = 5, number = 10)
+
+rfeTest <- rfe(x=alzTraining[,!names(alzTraining) %in% c("CLASS")], y=alzTraining$CLASS,
+            sizes = subsets,
+                 rfeControl = ctrl)
+
+rfeTest
+predictors(rfeTest)
+plot(rfeTest, type = c("g", "o"))
+
+```
+
+
+
+b) Random forest model
+
+The random forest algorithm to improve upon the dataset through the use of decorrelated decision trees. Random forests build on the idea of bagging to use a different bootstrap sample of the training
+data for learning decision trees. However, a key distinguishing feature of random forests from bagging is that at every internal node of a tree, the best splitting criterion is chosen among a small set of randomly selected attributes.
+
+The best fitting model with the optimal number of features is stored in the fit object. 
+```{r}
+rfeTest$fit
+```
+
+
+
+```{r}
+
+#alzTraining.RF.preds <-predict(rfeTest$fit, alzTest[,!names(alzTraining) %in% c("CLASS")])
+#churn.preds <-predict(rfe.churn$fit, test[,!names(test) %in% c("Churn")])
+
+#conf_matrix<-confusionMatrix(alzTraining.RF.preds,as.factor(alzTest$CLASS))
+#conf_matrix
+```
+
+
+## Exercise 4
+
+Uses the Customer Churn dataset supplied through the course materials. "Phone" data was deleted in order to fit into the random forest limit of under 53 different categories. 
+
+```{r}
+
+churn <- read.csv("churn.csv", stringsAsFactors = TRUE, fileEncoding = "UTF-8-BOM")
+churn <- churn[complete.cases(churn),]
+sample = sample.split(churn, SplitRatio = .75)
+train = subset(churn, sample == TRUE)
+test  = subset(churn, sample == FALSE)
+```
+
+Full dataset was constrained to 500 entries to account for computational power
+
+```{r}
+
+
+
+ctrl.churn <- rfeControl(functions = rfFuncs,
+                   method = "repeatedcv",
+                   repeats = 5)
+
+levels(train$Churn[1:500])
+rfe.churn <- rfe(x=train[1:500,!names(train) %in% c("Churn")], y=train$Churn[1:500],
+                 sizes = c(3:8, 10, 15),
+                 rfeControl = ctrl.churn)
+
+rfe.churn
+predictors(rfe.churn)
+plot(rfe.churn, type = c("g", "o"))
+
+
+```
+ 
+
+
+
+b) Random forest model
+
+```{r}
+rfe.churn$fit
+```
+
+
+
+Now, we predict samples in the test set, and compare them to their actual classes. 
+```{r}
+churn.preds <-predict(rfe.churn$fit, test[,!names(test) %in% c("Churn")])
+
+conf_matrix.churn <-confusionMatrix(churn.preds,as.factor(test$Churn))
+conf_matrix.churn
+```
+
+Classifier has an accuracy of 73%. High sensitivity of 97%, however a very low specificity rate of 2%, meaning it has a very low false positive rate. 
+
+```{r}
+conf_matrix.churn$byClass["F1"]
+```
+The F1 score is a balance between Precision and Recall.
+
+Precision is the ratio of correct predictions in the all the positive predicted observations. 
+Recall is the ratio of correctly predicted positive observation in the whole positive classs. 
+
+
+
+```{r}
+mcc(churn.preds, test$Churn)
+```
+Matthew's Correlation Coefficient is in essence a correlation coefficient between the observed and predicted binary classifications; it returns a value between −1 and +1. A coefficient of +1 represents a perfect prediction, 0 no better than random prediction and −1 indicates total disagreement between prediction and observation. To get a good score, a classifier must get a good score in all 4 confusion matrix categories. This classifier has a poor mcc.
+
+
+```{r}
+youden<- conf_matrix.churn$byClass["Sensitivity"] + conf_matrix.churn$byClass["Specificity"] -1 
+youden
+```
+Youden's J statistic has a range through 0 to 1, with 1 meaning all values were predicted correctly. As seen with my number, Youden's J statistic can be negative but it is said to be between 0 and 1 where positives and negatives are the number of real positive and real negative samples.
+
+
+## Exercise 5
+```{r}
+wine <- read.csv("WineStudy.csv")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
